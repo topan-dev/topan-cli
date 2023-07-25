@@ -53,7 +53,7 @@ function getMessage(message) {
         continue;
       }
       if (message.cleanRoomlog) {
-        RoomLogger.clean();
+        // RoomLogger.clean();
         continue;
       }
       if (message.statusChange) {
@@ -64,6 +64,12 @@ function getMessage(message) {
       if (message.run) {
         MainLogger.log(`<span class="command-tip">topan-cli></span> ${message.run}`);
         socket.send(JSON.stringify({ type: "main", command: message.run }));
+        continue;
+      }
+      if (message.cookie) {
+        $.cookie('topan.client.cookie', message.cookie,
+          { expires: 100, path: '/', secure: false, raw: false });
+        window.location.pathname = '';
         continue;
       }
     }
@@ -116,3 +122,16 @@ $(document).ready(() => {
     }
   });
 });
+
+function SetPassword(password) {
+  if (password) {
+    MainLogger.log(`<span class="command-tip">topan-cli></span> setpass`);
+    socket.send(JSON.stringify({ type: "main", command: "setpass", password }));
+  }
+}
+function Login(username, password) {
+  if (username && password) {
+    MainLogger.log(`<span class="command-tip">topan-cli></span> login`);
+    socket.send(JSON.stringify({ type: "main", command: "login", username, password }));
+  }
+}
