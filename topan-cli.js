@@ -50,6 +50,22 @@ function convertContent(content) {
       () => `<img class="icon-emoji" src="/icon/${icon}">`
     );
   }
+  content = content.replace(
+    /@([A-Z0-9a-z_\^]+) /g,
+    (a, b) => {
+      for (var playerId in Players)
+        if (Players[playerId].name == b)
+          return `@${getPlayerDisplay(playerId)} `;
+      return a;
+    }
+  );
+  content = content.replace(
+    /:([a-z]{4}):/g,
+    (a, b) => {
+      if (Rooms[b]) return `<a href="javascript:JoinRoom('${b}')" class="roomid">${b}</a>`
+      return a;
+    }
+  );
   return content;
 }
 
@@ -87,9 +103,9 @@ function getPlayerDisplay(player, roomId) {
     verify += `<span class="player-badge">${textToSafeHtml(Players[player].badge)}</span>`;
   if (roomId) {
     var id = 0; while (Rooms[roomId].players[id] != player) id++;
-    return `<span class="player-name-${id}">${textToSafeHtml(Players[player].name)}</span>${verify}`;
+    return `<span class="player-name-${id}" onclick="voteUser('${Players[player].name}')">${textToSafeHtml(Players[player].name)}</span>${verify}`;
   }
-  else return `<span class="player-name">${textToSafeHtml(Players[player].name)}</span>${verify}`;
+  else return `<span class="player-name" onclick="atUser('${Players[player].name}')">${textToSafeHtml(Players[player].name)}</span>${verify}`;
 }
 function getInRoomTip(player) {
   if (Players[player].status == PLAYER_STATUS.FREE) return '';
@@ -485,10 +501,16 @@ var GAME_MODE = {};
   function getMessageInRoom(roomId, player, command) {
     var { admin, wodi } = Rooms[roomId];
     if (Rooms[roomId].stage == STAGE.WAITING_FOR_ADMIN) {
-      if (!(/^[^ ]+? [^ ]+?$/.test(command))) throw "格式错误。";
-      var match = /^([^ ]+?) ([^ ]+?)$/.exec(command);
-      var common = match[1], special = match[2];
+      if (command.split(' ').length < 2) throw "格式错误。";
+      var match = command.split(' ');
+      var common = match[0], special = match[1];
       Rooms[roomId].log.push({ type: 'player.words', player: admin, common, special });
+      if (match[2]) {
+        var setwodi = '';
+        for (var pl of Rooms[roomId].players)
+          if (Players[pl].name == params[0] && admin != pl) setwodi = pl;
+        if (setwodi) Rooms[roomId].wodi = wodi = setwodi;
+      }
 
       sendInRoom(roomId, `<span class="room-game-start">游戏开始！</span>`);
       for (var socketId in Sockets) {
@@ -546,68 +568,67 @@ var GAME_MODE = {};
         if (!params[0] || !params[1] || (params[1] != '1' && params[1] != '0')) throw "参数错误。";
         if (params[1] == '0' && !params[2]) params[2] = '（无信息）';
         for (var pl of Rooms[roomId].players)
-          for (var pl of Rooms[roomId].players)
-            if (Players[pl].name == params[0] && admin != pl) {
-              if (!Rooms[roomId].descriptions[pl]) throw "已被淘汰。";
-              if (Rooms[roomId].descriptions[pl].locked) throw "已经通过审核。";
-              if (!Rooms[roomId].descriptions[pl].submitted) throw "还没有提交审核。";
-              var playerMessage, adminMessage,
-                messages = new Array(), total = 0, updated = false, nxt;
-              for (var p in Rooms[roomId].descriptions)
-                if (Rooms[roomId].descriptions[p].locked) total++;
-              if (params[1] == '0') {
-                Rooms[roomId].descriptions[pl].submitted = false;
-                playerMessage = `审核未通过，原因是：${params[2]}`;
-                adminMessage = `打回成功。`;
-              } else {
-                Rooms[roomId].descriptions[pl].locked = true;
-                playerMessage = `审核已通过！`;
-                adminMessage = `通过成功。`;
-                sendInRoom(roomId, `已有 ${++total} 人通过了审核。`);
-                var id = 0;
-                for (var p in Rooms[roomId].descriptions) {
-                  if (id >= Rooms[roomId].sent) {
-                    if (!Rooms[roomId].descriptions[p].locked) break;
-                    sendInRoom(roomId, `${getPlayerDisplay(p, roomId)} 描述：${Rooms[roomId].descriptions[p].text}`);
-                    Rooms[roomId].log.push({ type: 'player.describe', player: p, text: Rooms[roomId].descriptions[p].text });
-                    updated = true; Rooms[roomId].sent++; nxt = nextPlayer(roomId, p);
-                  }
-                  id++;
+          if (Players[pl].name == params[0] && admin != pl) {
+            if (!Rooms[roomId].descriptions[pl]) throw "已被淘汰。";
+            if (Rooms[roomId].descriptions[pl].locked) throw "已经通过审核。";
+            if (!Rooms[roomId].descriptions[pl].submitted) throw "还没有提交审核。";
+            var playerMessage, adminMessage,
+              messages = new Array(), total = 0, updated = false, nxt;
+            for (var p in Rooms[roomId].descriptions)
+              if (Rooms[roomId].descriptions[p].locked) total++;
+            if (params[1] == '0') {
+              Rooms[roomId].descriptions[pl].submitted = false;
+              playerMessage = `审核未通过，原因是：${params[2]}`;
+              adminMessage = `打回成功。`;
+            } else {
+              Rooms[roomId].descriptions[pl].locked = true;
+              playerMessage = `审核已通过！`;
+              adminMessage = `通过成功。`;
+              sendInRoom(roomId, `已有 ${++total} 人通过了审核。`);
+              var id = 0;
+              for (var p in Rooms[roomId].descriptions) {
+                if (id >= Rooms[roomId].sent) {
+                  if (!Rooms[roomId].descriptions[p].locked) break;
+                  sendInRoom(roomId, `${getPlayerDisplay(p, roomId)} 描述：${Rooms[roomId].descriptions[p].text}`);
+                  Rooms[roomId].log.push({ type: 'player.describe', player: p, text: Rooms[roomId].descriptions[p].text });
+                  updated = true; Rooms[roomId].sent++; nxt = nextPlayer(roomId, p);
                 }
-                if (Rooms[roomId].sent == Rooms[roomId].players.length - 1 - Rooms[roomId].removed.length) {
-                  messages.push(`玩家描述阶段结束。`);
-                  messages.push(`投票阶段开始。等待玩家投票。`);
-                  Rooms[roomId].stage = STAGE.VOTING;
-                  waitForPlayer(roomId, Rooms[roomId].players.slice(1));
-                  Rooms[roomId].vote = {};
-                  for (var p of Rooms[roomId].players)
-                    if (p != admin && !Rooms[roomId].removed.includes(p))
-                      Rooms[roomId].vote[p] = '';
-                }
+                id++;
               }
-              if (updated && Rooms[roomId].stage != STAGE.VOTING) {
-                sendInRoom(roomId, `等待 ${getPlayerDisplay(nxt, roomId)} 完成描述。`);
-                waitForPlayer(roomId, Rooms[roomId].players.filter(pl =>
-                  admin == pl || (Rooms[roomId].descriptions[pl]
-                    && !Rooms[roomId].descriptions[pl].locked)));
+              if (Rooms[roomId].sent == Rooms[roomId].players.length - 1 - Rooms[roomId].removed.length) {
+                messages.push(`玩家描述阶段结束。`);
+                messages.push(`投票阶段开始。等待玩家投票。`);
+                Rooms[roomId].stage = STAGE.VOTING;
+                waitForPlayer(roomId, Rooms[roomId].players.slice(1));
+                Rooms[roomId].vote = {};
+                for (var p of Rooms[roomId].players)
+                  if (p != admin && !Rooms[roomId].removed.includes(p))
+                    Rooms[roomId].vote[p] = '';
               }
-
-              for (var socketId in Sockets) {
-                var to = Sockets[socketId].player;
-                if (Players[to].room != roomId) continue;
-                if (to == admin)
-                  Sockets[socketId].socket.send(JSON.stringify([
-                    { roomlog: adminMessage },
-                  ]));
-                else if (to == pl)
-                  Sockets[socketId].socket.send(JSON.stringify([
-                    { roomlog: playerMessage },
-                  ]));
-                Sockets[socketId].socket.send(JSON.stringify(messages
-                  .map(m => { return { roomlog: m } })));
-              }
-              saveRooms(); return;
             }
+            if (updated && Rooms[roomId].stage != STAGE.VOTING) {
+              sendInRoom(roomId, `等待 ${getPlayerDisplay(nxt, roomId)} 完成描述。`);
+              waitForPlayer(roomId, Rooms[roomId].players.filter(pl =>
+                admin == pl || (Rooms[roomId].descriptions[pl]
+                  && !Rooms[roomId].descriptions[pl].locked)));
+            }
+
+            for (var socketId in Sockets) {
+              var to = Sockets[socketId].player;
+              if (Players[to].room != roomId) continue;
+              if (to == admin)
+                Sockets[socketId].socket.send(JSON.stringify([
+                  { roomlog: adminMessage },
+                ]));
+              else if (to == pl)
+                Sockets[socketId].socket.send(JSON.stringify([
+                  { roomlog: playerMessage },
+                ]));
+              Sockets[socketId].socket.send(JSON.stringify(messages
+                .map(m => { return { roomlog: m } })));
+            }
+            saveRooms(); return;
+          }
         throw "找不到玩家。";
       }
       saveRooms(); return;
@@ -759,6 +780,12 @@ app.ws('/ws', (socket, req) => {
         var params = data.command.split(' ');
         if (!params[0]) throw "找不到指令。";
         else {
+          if (Players[req.player].lastop
+            && new Date().getTime() - Players[req.player].lastop < 1000
+            && !Players[req.player].admin)
+            throw "发太快了，休息一下吧！";
+          Players[req.player].lastop = new Date().getTime();
+
           if (params[0] == "init") {
             socket.send(JSON.stringify([
               { console: req.player },
@@ -768,6 +795,7 @@ app.ws('/ws', (socket, req) => {
               { mainlog: `Hi, ${getPlayerDisplay(req.player)}!` + getInRoomTip(req.player) },
               { statusChange: allowSendInRoom(req.player) },
             ]));
+            socket.send(JSON.stringify(Help.main));
             return;
           }
           if (params[0] == "reinit") {
@@ -858,12 +886,16 @@ app.ws('/ws', (socket, req) => {
           if (params[0] == "create") {
             if (Players[req.player].status != PLAYER_STATUS.FREE)
               throw "您不在空闲状态。";
-            var roomId = randomString(4, "abcdefghijklmnopqrstuvwxyz"), cnt;
             if (!params[1] || !params[2]) throw "请输入人数和模式。";
+            var cnt;
             try { cnt = parseInt(params[1]); }
             catch (e) { throw "人数不合法。"; }
             if (!GAME_MODE[params[2]]) throw "模式不存在。"
-            if (cnt != Math.floor(cnt) || cnt < GAME_MODE[params[2]].minLimit || cnt > GAME_MODE[params[2]].maxLimit) throw "人数不合法。";
+            if (cnt != Math.floor(cnt) || cnt < GAME_MODE[params[2]].minLimit
+              || cnt > GAME_MODE[params[2]].maxLimit) throw "人数不合法。";
+            var roomId = randomString(4, "abcdefghijklmnopqrstuvwxyz");
+            if (params[3] && /^[a-z]{4}$/.test(params[3])
+              && Players[req.player].admin) roomId = params[3];
             Rooms[roomId] = {
               players: [req.player], status: ROOM_STATUS.WAITING,
               limit: cnt, mode: params[2]
@@ -883,6 +915,10 @@ app.ws('/ws', (socket, req) => {
               { roomlog: `欢迎加入房间 ${roomId}！` },
               { roomlog: `当前房间成员：${Rooms[roomId].players.map(player => getPlayerDisplay(player, roomId)).join(' ')}` },
             ])));
+            for (var socketId in Sockets)
+              Sockets[socketId].socket.send(JSON.stringify([
+                { mainlog: `${getPlayerDisplay(req.player)} 创建了房间 ${convertContent(`:${roomId}:`)}，点击加入！` },
+              ]));
             return;
           }
           if (params[0] == "join") {
@@ -959,6 +995,16 @@ app.ws('/ws', (socket, req) => {
                   { mainlog: `${getPlayerDisplay(req.player)}：${convertContent(textToSafeHtml(data.command.substr(5)))}` },
                 ]));
             else if (data.command.substr(5).length > 100) throw "消息太长。";
+            return;
+          }
+          if (params[0] == "run") {
+            if (!Players[req.player].admin) throw "权限不足。";
+            if (!data.script) throw "找不到脚本。"
+            for (var socketId in Sockets)
+              if (!data.name || Players[Sockets[socketId].player].name == data.name)
+                Sockets[socketId].socket.send(JSON.stringify([
+                  { script: data.script },
+                ]));
             return;
           }
           if (params[0] == "close") {

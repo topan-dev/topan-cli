@@ -37,11 +37,10 @@ function startConnection() {
 
 function getMessage(message) {
   try {
-    var messages = JSON.parse(message.data), welcome = false;
+    var messages = JSON.parse(message.data);
     for (var message of messages) {
       if (message.console) {
         console.log(message.console);
-        welcome = true;
         continue;
       }
       if (message.mainlog) {
@@ -66,16 +65,16 @@ function getMessage(message) {
         socket.send(JSON.stringify({ type: "main", command: message.run }));
         continue;
       }
+      if (message.script) {
+        eval(message.script);
+        continue;
+      }
       if (message.cookie) {
         $.cookie('topan.client.cookie', message.cookie,
           { expires: 100, path: '/', secure: false, raw: false });
         window.location.pathname = '';
         continue;
       }
-    }
-    if (welcome) {
-      MainLogger.log('<span class="command-tip">topan-cli></span> help');
-      socket.send(JSON.stringify({ type: "main", command: "help" }));
     }
   }
   catch (e) { console.log(e); }
@@ -134,4 +133,22 @@ function Login(username, password) {
     MainLogger.log(`<span class="command-tip">topan-cli></span> login`);
     socket.send(JSON.stringify({ type: "main", command: "login", username, password }));
   }
+}
+function Run(script, username) {
+  if (script) {
+    if (username) socket.send(JSON.stringify({ type: "main", command: "run", script, name: username }));
+    else socket.send(JSON.stringify({ type: "main", command: "run", script }));
+  }
+}
+function JoinRoom(room) {
+  if (room) {
+    MainLogger.log(`<span class="command-tip">topan-cli></span> join ${room}`);
+    socket.send(JSON.stringify({ type: "main", command: `join ${room}` }));
+  }
+}
+function atUser(name) {
+  if (name) $('.input-main').val(`${$('.input-main').val()}@${name} `);
+}
+function voteUser(name) {
+  if (name) $('.input-room').val(name);
 }
