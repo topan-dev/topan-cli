@@ -855,11 +855,64 @@ var GAME_MODE = {};
       if (total == Rooms[roomId].players.length) {
         sendInRoom(roomId, `设置全部完成，游戏正式开始！`);
         Rooms[roomId].stage = STAGE.PLAYING;
+        Rooms[roomId].display = {};
+        for (var playerId of Rooms[roomId].players) {
+          var map = new Array(MAP_WIDTH);
+          for (var i = 0; i < MAP_WIDTH; i++)
+            map[i] = new Array(MAP_WIDTH).fill(-1);
+          Rooms[roomId].display[playerId] = map;
+        }
+        var firstop = Rooms[roomId].players[0];
+        sendInRoom(roomId, `等待 ${getPlayerDisplay(firstop, roomId)} 操作。`);
+        waitForPlayer(roomId, [firstop]); saveRooms();
       }
       else sendInRoom(roomId, `等待剩下 ${Rooms[roomId].players.length - total} 人完成飞机位置设置。`);
     }
     else {
-      if (Rooms[roomId].removed.includes(player)) throw "您已经出局。";
+      if (!(/^[A-Z0-9a-z_\^]+? [a-j][0-9][LRUD]?$/.test(command))) throw "格式错误。";
+      var [user, pos] = command.split(' ');
+      for (var target of Rooms[roomId].players) {
+        if (Players[target].name != user) continue;
+        if (Rooms[roomId].removed.includes(target)) throw "该玩家已经出局。";
+        if (target == player) throw "不能选择自己为目标。";
+        if (/^[a-j][0-9]$/.test(pos)) {
+          var tmp = getPosition(pos);
+          var result = Rooms[roomId].map[target][tmp.x][tmp.y];
+          if (result >= 2) result = 2;
+          var dictionary = ['空地', '机身', '机头'];
+          sendInRoom(roomId, `${getPlayerDisplay(player, roomId)} 询问了 `
+            + `${getPlayerDisplay(target, roomId)} 的坐标 ${pos}，结果为 <strong>${dictionary[result]}</strong>。`);
+          if(Rooms[roomId].display[target][tmp.x][tmp.y]>=3) Rooms[roomId].display[target][tmp.x][tmp.y] = result;
+          var nxt = nextPlayer(roomId, player);
+          while (Rooms[roomId].removed.includes(nxt)) nxt = nextPlayer(roomId, nxt);
+          for (var socketId in Sockets) {
+            var to = Sockets[socketId].player;
+            if (Players[to].room != roomId) continue;
+            if (to == nxt) {
+              var messages = new Array();
+              for (var pl of Rooms[roomId].players) {
+                if (pl == nxt) continue;
+                messages.push({ roomlog: `${getPlayerDisplay(pl, roomId)} 的地图：` });
+                for (var i = 0; i < MAP_WIDTH; i++) {
+                  var lineId = MAP_WIDTH - i - 1;
+                  messages.push({
+                    roomlog: `${lineId}${Rooms[roomId].display[pl][i]
+                      .map(x => ` ${x == -1 ? '?' : ".*=<>^v"[x]}`).join('')}`
+                  });
+                }
+                messages.push({ roomlog: `&nbsp;&nbsp;${"a b c d e f g h i j".slice(0, 2 * MAP_WIDTH - 1)}` });
+              }
+              Sockets[socketId].socket.send(JSON.stringify(messages));
+            }
+          }
+          sendInRoom(roomId, `等待 ${getPlayerDisplay(nxt, roomId)} 操作。`);
+          waitForPlayer(roomId, [nxt]); saveRooms(); return;
+        }
+        else {
+          ;
+        }
+      }
+      throw "找不到玩家。";
     }
   }
 

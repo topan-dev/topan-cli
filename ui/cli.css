@@ -6,12 +6,25 @@
 .icon-emoji {
     width: 25px;
     height: 25px;
-    top: 5px;
+    top: 8px;
     position: relative;
 }
 
+svg {
+    margin-left: 3px;
+}
+
+.player-badge {
+    color: white;
+    border-radius: 4px;
+    margin-left: 3px;
+    padding: 2px 4px;
+    background-color: rgb(25, 88, 170);
+    font-size: 12px;
+}
+
 .player-name {
-    color: rgb(255, 106, 19);
+    color: rgb(25, 88, 170);
     font-weight: bold;
 }
 
@@ -60,8 +73,13 @@
     font-weight: bold;
 }
 
+.roomid {
+    color: rgb(68, 190, 143) !important;
+    font-weight: bold;
+}
+
 .command-tip, .room-game-start {
-    color: rgb(25, 88, 170);
+    color: rgb(187, 132, 70);
     font-weight: bold;
 }
 
