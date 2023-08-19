@@ -83,7 +83,7 @@ function getMessage(message) {
 function closeSocket() {
   MainLogger.log(`<span class="command-error">连接已中断，3 秒后尝试重新连接。</span>`)
   setTimeout(() => {
-    socket = new WebSocket(`ws://${window.location.host}/ws`);
+    socket = new WebSocket(`wss://${window.location.host}/ws`);
     socket.onopen = startConnection;
     socket.onmessage = getMessage;
     socket.onclose = closeSocket;
@@ -94,7 +94,7 @@ $(document).ready(() => {
   MainLogger = new Logger('.cli-main');
   RoomLogger = new Logger('.cli-room');
 
-  socket = new WebSocket(`ws://${window.location.host}/ws`);
+  socket = new WebSocket(`wss://${window.location.host}/ws`);
   socket.onopen = startConnection;
   socket.onmessage = getMessage;
   socket.onclose = closeSocket;

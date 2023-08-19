@@ -743,6 +743,139 @@ var GAME_MODE = {};
   GAME_MODE.whoiswodi = { GameInit, getMessageInRoom, Export, minLimit: 4, maxLimit: 1000 };
 }
 
+{
+  const PLANE = {
+    L: [
+      [0, 0, 1, 0, 0],
+      [0, 0, 1, 0, 1],
+      [2, 1, 1, 1, 1],
+      [0, 0, 1, 0, 1],
+      [0, 0, 1, 0, 0]
+    ],
+    R: [
+      [0, 0, 1, 0, 0],
+      [1, 0, 1, 0, 0],
+      [1, 1, 1, 1, 2],
+      [1, 0, 1, 0, 0],
+      [0, 0, 1, 0, 0]
+    ],
+    U: [
+      [0, 0, 2, 0, 0],
+      [0, 0, 1, 0, 0],
+      [1, 1, 1, 1, 1],
+      [0, 0, 1, 0, 0],
+      [0, 1, 1, 1, 0]
+    ],
+    D: [
+      [0, 1, 1, 1, 0],
+      [0, 0, 1, 0, 0],
+      [1, 1, 1, 1, 1],
+      [0, 0, 1, 0, 0],
+      [0, 0, 2, 0, 0]
+    ]
+  },
+    DIRECTION = { L: 2, R: 3, U: 4, D: 5 },
+    STAGE = { SETTING: 1, PLAYING: 2 },
+    PLANE_COUNT = 3, MAP_WIDTH = 10;
+  // 地图宽度不能超过 10！！！
+
+  function getPosition(plane) {
+    return {
+      x: MAP_WIDTH - Number(plane[1]) - 1,
+      y: plane.charCodeAt(0) - 'a'.charCodeAt(0)
+    };
+  }
+
+  function GameInit(roomId) {
+    Rooms[roomId].log = new Array();
+    Rooms[roomId].log.push({ type: 'system.start' });
+    Rooms[roomId].removed = new Array();
+    Rooms[roomId].stage = STAGE.SETTING;
+    Rooms[roomId].map = {};
+    sendInRoom(roomId, `游戏开始。等待玩家完成飞机位置设置。`);
+    sendInRoom(roomId, `地图：`);
+    for (var i = 0; i < MAP_WIDTH; i++)
+      sendInRoom(roomId, `${MAP_WIDTH - i - 1}${' .'.repeat(MAP_WIDTH)}`);
+    sendInRoom(roomId, `&nbsp;&nbsp;${"a b c d e f g h i j".slice(0, 2 * MAP_WIDTH - 1)}`);
+    waitForPlayer(roomId, Rooms[roomId].players); saveRooms();
+  }
+
+  function getMessageInRoom(roomId, player, command) {
+    if (Rooms[roomId].stage == STAGE.SETTING) {
+      if (command.split(' ').length != PLANE_COUNT) throw "飞机数量不符合要求。";
+      for (var plane of command.split(' '))
+        if (!(/^[a-j][0-9][LRUD]$/.test(plane))) throw "格式错误。";
+      var map = new Array(MAP_WIDTH);
+      for (var i = 0; i < MAP_WIDTH; i++)
+        map[i] = new Array(MAP_WIDTH).fill(0);
+      for (var plane of command.split(' ')) {
+        const model = PLANE[plane[2]];
+        var x0, y0, { x, y } = getPosition(plane.slice(0, 2));
+        for (var i = 0; i < 5; i++)
+          for (var j = 0; j < 5; j++)
+            if (model[i][j] == 2) x0 = i, y0 = j;
+        x -= x0, y -= y0;
+        for (var i = 0; i < 5; i++)
+          for (var j = 0; j < 5; j++) {
+            x0 = x + i, y0 = y + j;
+            if (model[i][j] > 0) {
+              if (map[x0][y0]) throw "飞机存在重叠。";
+              if (model[i][j] == 2)
+                map[x0][y0] = DIRECTION[plane[2]];
+              else map[x0][y0] = 1;
+            }
+          }
+      }
+      for (var socketId in Sockets) {
+        var to = Sockets[socketId].player;
+        if (Players[to].room != roomId) continue;
+        if (to == player) {
+          var messages = new Array();
+          for (var i = 0; i < MAP_WIDTH; i++) {
+            var lineId = MAP_WIDTH - i - 1;
+            messages.push({ roomlog: `${lineId}${map[i].map(x => ` ${".*===="[x]}`).join('')}` });
+          }
+          messages.push({ roomlog: `&nbsp;&nbsp;${"a b c d e f g h i j".slice(0, 2 * MAP_WIDTH - 1)}` });
+          messages.push({ roomlog: `飞机位置设置成功！如需要修改，请在游戏开始前按照相同格式输入。` });
+          Sockets[socketId].socket.send(JSON.stringify(messages));
+        }
+        else if (!Rooms[roomId].map[player])
+          Sockets[socketId].socket.send(JSON.stringify([
+            { roomlog: `${getPlayerDisplay(player, roomId)} 完成了飞机位置设置。` },
+          ]));
+      }
+      if (Rooms[roomId].map[player]) {
+        Rooms[roomId].map[player] = map;
+        saveRooms(); return;
+      }
+      Rooms[roomId].map[player] = map; saveRooms();
+      var total = 0;
+      for (var playerId of Rooms[roomId].players)
+        if (Rooms[roomId].map[playerId]) total++;
+      if (total == Rooms[roomId].players.length) {
+        sendInRoom(roomId, `设置全部完成，游戏正式开始！`);
+        Rooms[roomId].stage = STAGE.PLAYING;
+      }
+      else sendInRoom(roomId, `等待剩下 ${Rooms[roomId].players.length - total} 人完成飞机位置设置。`);
+    }
+    else {
+      if (Rooms[roomId].removed.includes(player)) throw "您已经出局。";
+    }
+  }
+
+  function Export(roomId) {
+    // var exports = new Array(), consoleexports = '';
+    // exports.push({ mainlog: `${getPlayerDisplay(Rooms[roomId].wodi, roomId)} 是卧底。` });
+    // if (Rooms[roomId].log[Rooms[roomId].log.length - 1].result == 'wodi')
+    //   exports.push({ mainlog: `卧底获胜。` });
+    // else exports.push({ mainlog: `普通玩家获胜。` });
+    // exports.push({ console: consoleexports });
+    // return exports;
+  }
+
+  GAME_MODE.plane = { GameInit, getMessageInRoom, Export, minLimit: 2, maxLimit: 1000 };
+}
+
 app.all('*', (req, res, next) => {
   if (!req.get('Origin')) return next();
   res.set('Access-Control-Allow-Origin', '*');
