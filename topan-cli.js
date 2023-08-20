@@ -810,7 +810,7 @@ var GAME_MODE = {};
         map[i] = new Array(MAP_WIDTH).fill(0);
       for (var plane of command.split(' ')) {
         const model = PLANE[plane[2]];
-        var x0, y0, { x, y } = getPosition(plane.slice(0, 2));
+        var x0, y0, { x, y } = getPosition(plane);
         for (var i = 0; i < 5; i++)
           for (var j = 0; j < 5; j++)
             if (model[i][j] == 2) x0 = i, y0 = j;
@@ -819,9 +819,9 @@ var GAME_MODE = {};
           for (var j = 0; j < 5; j++) {
             x0 = x + i, y0 = y + j;
             if (model[i][j] > 0) {
+              if (x0 < 0 || x0 >= MAP_WIDTH || y0 < 0 || y0 >= MAP_WIDTH) throw "超出边界。";
               if (map[x0][y0]) throw "飞机存在重叠。";
-              if (model[i][j] == 2)
-                map[x0][y0] = DIRECTION[plane[2]];
+              if (model[i][j] == 2) map[x0][y0] = DIRECTION[plane[2]];
               else map[x0][y0] = 1;
             }
           }
@@ -882,35 +882,66 @@ var GAME_MODE = {};
           var dictionary = ['空地', '机身', '机头'];
           sendInRoom(roomId, `${getPlayerDisplay(player, roomId)} 询问了 `
             + `${getPlayerDisplay(target, roomId)} 的坐标 ${pos}，结果为 <strong>${dictionary[result]}</strong>。`);
-          if(Rooms[roomId].display[target][tmp.x][tmp.y]>=3) Rooms[roomId].display[target][tmp.x][tmp.y] = result;
-          var nxt = nextPlayer(roomId, player);
-          while (Rooms[roomId].removed.includes(nxt)) nxt = nextPlayer(roomId, nxt);
-          for (var socketId in Sockets) {
-            var to = Sockets[socketId].player;
-            if (Players[to].room != roomId) continue;
-            if (to == nxt) {
-              var messages = new Array();
-              for (var pl of Rooms[roomId].players) {
-                if (pl == nxt) continue;
-                messages.push({ roomlog: `${getPlayerDisplay(pl, roomId)} 的地图：` });
-                for (var i = 0; i < MAP_WIDTH; i++) {
-                  var lineId = MAP_WIDTH - i - 1;
-                  messages.push({
-                    roomlog: `${lineId}${Rooms[roomId].display[pl][i]
-                      .map(x => ` ${x == -1 ? '?' : ".*=<>^v"[x]}`).join('')}`
-                  });
-                }
-                messages.push({ roomlog: `&nbsp;&nbsp;${"a b c d e f g h i j".slice(0, 2 * MAP_WIDTH - 1)}` });
-              }
-              Sockets[socketId].socket.send(JSON.stringify(messages));
-            }
-          }
-          sendInRoom(roomId, `等待 ${getPlayerDisplay(nxt, roomId)} 操作。`);
-          waitForPlayer(roomId, [nxt]); saveRooms(); return;
+          if (Rooms[roomId].display[target][tmp.x][tmp.y] < 3)
+            Rooms[roomId].display[target][tmp.x][tmp.y] = result;
         }
         else {
-          ;
+          var tmp = getPosition(pos), direction = DIRECTION[pos[2]];
+          sendInRoom(roomId, `${getPlayerDisplay(player, roomId)} 向 `
+            + `${getPlayerDisplay(target, roomId)} 的坐标 ${pos} 发起了攻击。`);
+          if (Rooms[roomId].map[target][tmp.x][tmp.y] == direction) {
+            const model = PLANE[pos[2]];
+            var x0, y0, { x, y } = getPosition(pos);
+            for (var i = 0; i < 5; i++)
+              for (var j = 0; j < 5; j++)
+                if (model[i][j] == 2) x0 = i, y0 = j;
+            x -= x0, y -= y0;
+            for (var i = 0; i < 5; i++)
+              for (var j = 0; j < 5; j++) {
+                x0 = x + i, y0 = y + j;
+                if (model[i][j] == 2) Rooms[roomId]
+                  .display[target][x0][y0] = DIRECTION[pos[2]] + 1;
+                else if (model[i][j] == 1) Rooms[roomId].display[target][x0][y0] = 1;
+              }
+            var total = 0;
+            for (var i = 0; i < MAP_WIDTH; i++)
+              for (var j = 0; j < MAP_WIDTH; j++)
+                if (Rooms[roomId].display[target][i][j] >= 3) total++;
+            if (total == PLANE_COUNT) {
+              Rooms[roomId].removed.push(target);
+              sendInRoom(roomId, `飞机成功被轰炸。${getPlayerDisplay(target, roomId)} <strong>出局了</strong>。`);
+              if (Rooms[roomId].removed.length == Rooms[roomId].players.length - 1) {
+                Rooms[roomId].log.push({ type: 'system.close' });
+                closeRoom(roomId); saveRooms(); return;
+              }
+            }
+            else sendInRoom(roomId, `飞机成功被轰炸。${getPlayerDisplay(target, roomId)} 还剩下 ${PLANE_COUNT - total} 架飞机。`);
+          }
         }
+        var nxt = nextPlayer(roomId, player);
+        while (Rooms[roomId].removed.includes(nxt)) nxt = nextPlayer(roomId, nxt);
+        for (var socketId in Sockets) {
+          var to = Sockets[socketId].player;
+          if (Players[to].room != roomId) continue;
+          if (to == nxt) {
+            var messages = new Array();
+            for (var pl of Rooms[roomId].players) {
+              if (pl == nxt) continue;
+              messages.push({ roomlog: `${getPlayerDisplay(pl, roomId)} 的地图：` });
+              for (var i = 0; i < MAP_WIDTH; i++) {
+                var lineId = MAP_WIDTH - i - 1;
+                messages.push({
+                  roomlog: `${lineId}${Rooms[roomId].display[pl][i]
+                    .map(x => ` ${x == -1 ? '?' : ".*=<>^v"[x]}`).join('')}`
+                });
+              }
+              messages.push({ roomlog: `&nbsp;&nbsp;${"a b c d e f g h i j".slice(0, 2 * MAP_WIDTH - 1)}` });
+            }
+            Sockets[socketId].socket.send(JSON.stringify(messages));
+          }
+        }
+        sendInRoom(roomId, `等待 ${getPlayerDisplay(nxt, roomId)} 操作。`);
+        waitForPlayer(roomId, [nxt]); saveRooms(); return;
       }
       throw "找不到玩家。";
     }
