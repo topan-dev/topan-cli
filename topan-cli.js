@@ -917,6 +917,7 @@ var GAME_MODE = {};
             }
             else sendInRoom(roomId, `飞机成功被轰炸。${getPlayerDisplay(target, roomId)} 还剩下 ${PLANE_COUNT - total} 架飞机。`);
           }
+          else sendInRoom(roomId, `轰炸失败。`);
         }
         var nxt = nextPlayer(roomId, player);
         while (Rooms[roomId].removed.includes(nxt)) nxt = nextPlayer(roomId, nxt);
