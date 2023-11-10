@@ -83,7 +83,7 @@ function getMessage(message) {
 function closeSocket() {
   MainLogger.log(`<span class="command-error">连接已中断，3 秒后尝试重新连接。</span>`)
   setTimeout(() => {
-    socket = new WebSocket(`${window.location.protocol.replace('http', 'ws')}://${window.location.host}/ws`);
+    socket = new WebSocket(`${window.location.protocol.replace('http', 'ws')}//${window.location.host}/ws`);
     socket.onopen = startConnection;
     socket.onmessage = getMessage;
     socket.onclose = closeSocket;
