@@ -999,7 +999,7 @@ app.ws('/ws', (socket, req) => {
         if (!params[0]) throw "找不到指令。";
         else {
           if (Players[req.player].lastop
-            && new Date().getTime() - Players[req.player].lastop < 1000
+            && new Date().getTime() - Players[req.player].lastop < 500
             && !Players[req.player].admin)
             throw "发太快了，休息一下吧！";
           Players[req.player].lastop = new Date().getTime();
